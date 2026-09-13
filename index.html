@@ -1,1 +1,41 @@
-<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101012"><title>Ритм — ежедневный планер</title><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="style.css"><body><main><header><span class="brand">ритм<span>●</span></span><button id="backup" aria-label="Скачать резервную копию">↥ Копия</button></header><div id="app"></div></main><nav id="nav"></nav><dialog id="sheet"><form id="form"></form></dialog><dialog id="reward"><div class="fire">🔥</div><h2 id="rewardTitle"></h2><p>Идеальный день. Всё выполнено.</p><button onclick="document.querySelector('#reward').close()">Продолжить</button></dialog><div id="toast" role="status"></div><script src="engine.js"></script><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0A0A0A">
+  <meta name="description" content="Ритм — задачи, привычки и твой ежедневный прогресс.">
+  <title>Ритм — ежедневный планер</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header class="app-header">
+      <a class="brand" href="#today" aria-label="Ритм — сегодня">ритм<span class="brand-dot"></span></a>
+      <button id="backup" class="backup-button" aria-label="Скачать резервную копию"></button>
+    </header>
+    <div id="app" aria-live="off"></div>
+  </main>
+  <nav id="nav" aria-label="Главная навигация"></nav>
+  <dialog id="sheet" aria-labelledby="sheetTitle">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <form id="form"></form>
+  </dialog>
+  <dialog id="reward" aria-labelledby="rewardTitle">
+    <canvas id="confetti" aria-hidden="true"></canvas>
+    <div class="reward-card">
+      <div class="reward-kicker">ИДЕАЛЬНЫЙ ДЕНЬ</div>
+      <div class="fire" aria-hidden="true"><img src="fire.svg" alt=""></div>
+      <h2 id="rewardTitle"></h2>
+      <p>Всё выполнено. Этот день — твой.</p>
+      <div id="rewardBonus" class="reward-bonus" hidden></div>
+      <button id="rewardClose" class="primary-button">Продолжить</button>
+    </div>
+  </dialog>
+  <div id="toast" role="status" hidden></div>
+  <script src="engine.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
