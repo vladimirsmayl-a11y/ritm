@@ -1,5 +1,6 @@
 'use strict';
 const E = PlannerEngine;
+const Feedback = RitmFeedback, Reminders = RitmReminders;
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -33,7 +34,10 @@ const paths = {
   trophy:'<path d="M8 3h8v6a4 4 0 0 1-8 0V3ZM8 5H4v3a4 4 0 0 0 4 4m8-7h4v3a4 4 0 0 1-4 4M12 13v5M8 21h8M9 18h6"/>',
   ice:'<path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7M9 4l3 3 3-3M9 20l3-3 3 3"/>',
   rest:'<path d="M20 15a8 8 0 0 1-11-11 8 8 0 1 0 11 11Z"/>',
-  circle:'<circle cx="12" cy="12" r="8"/>'
+  circle:'<circle cx="12" cy="12" r="8"/>',
+  settings:'<path d="m9 3-1 3-3 1-2 3 2 2-1 3 2 3 3-1 3 2 3-2 3 1 2-3-1-3 2-2-2-3-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/>',
+  sound:'<path d="M11 4 6 8H3v8h3l5 4V4ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
+  bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6"/>'
 };
 function icon(name, extra = '') {
   return `<svg class="icon ${extra}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths[name] || paths.today}</svg>`;
@@ -55,7 +59,11 @@ function toast(message, undo) {
   toastTimer = setTimeout(() => { element.hidden = true; }, undo ? 6500 : 3400);
 }
 function haptic(pattern = 12) {
-  if (!reducedMotion() && typeof navigator.vibrate === 'function') navigator.vibrate(pattern);
+  Feedback.vibrate(pattern);
+}
+function normalizeSettings() {
+  const value = state.settings || {};
+  state.settings = {feedbackEnabled:value.feedbackEnabled !== false, reminderEnabled:value.reminderEnabled === true};
 }
 function save() {
   return new Promise((resolve, reject) => {
@@ -76,6 +84,8 @@ async function commit(change, options = {}) {
     change();
     stats = E.calculate(state,today);
     await save();
+    Feedback.changed();
+    Reminders.stateChanged();
     const result = {ok:true, celebrate:!wasIdeal && state.days[today]?.outcome === 'ideal', iceEarned:stats.ice > before.ice};
     if (options.render !== false) render();
     if (options.reward !== false) presentReward(result);
@@ -105,6 +115,65 @@ function modal(title, contents, submit) {
   $('#cancel').onclick = () => closeSheet();
   $('#form').onsubmit = event => { event.preventDefault(); if (!busy && !interacting) submit?.(); };
   $('#sheet').showModal();
+}
+function settingsForm() {
+  const settings = state.settings, status = Reminders.status();
+  modal('Настройки', `<div class="settings-list">
+    <label class="setting-row" for="feedbackSwitch"><span class="setting-symbol">${icon('sound')}</span><span class="setting-copy"><strong>Звуки и вибрация</strong><small>Тихий отклик на твой прогресс</small></span><span class="switch"><input id="feedbackSwitch" type="checkbox" role="switch" ${settings.feedbackEnabled ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span></span></label>
+    <button id="testSound" class="setting-test" type="button">${icon('sound')} Послушать звук</button>
+    <div class="setting-divider"></div>
+    <label class="setting-row" for="reminderSwitch"><span class="setting-symbol">${icon('bell')}</span><span class="setting-copy"><strong>Вечернее напоминание</strong><small>В 21:00, если привычки без отметки</small></span><span class="switch"><input id="reminderSwitch" type="checkbox" role="switch" ${settings.reminderEnabled ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span></span></label>
+    <p id="reminderMode" class="helper" role="status"></p>
+    <div class="notification-preview"><span class="notification-logo">${icon('habits')}</span><div><div class="notification-meta"><span>РИТМ</span><span>21:00</span></div><strong>Вечерняя отметка</strong><p>Пара касаний — и сегодняшний план обновлён.</p></div></div>
+    ${status.configured ? '<div id="connectionGroup"><label class="connection-label" for="connectionCode">Код подключения</label><input id="connectionCode" type="password" autocomplete="off" maxlength="128" placeholder="Код для этого устройства"><p class="helper">Нужен один раз для напоминаний при закрытом Ритме.</p></div>' : ''}
+    <button id="testReminder" class="setting-test" type="button">${icon('bell')} Проверить уведомление</button>
+  </div>`);
+  $('#feedbackSwitch').onchange = async event => {
+    const input = event.target, enabled = input.checked;
+    input.disabled = true;
+    const result = await commit(()=>{state.settings.feedbackEnabled = enabled;},{reward:false});
+    input.disabled = false;
+    input.checked = state.settings.feedbackEnabled;
+    if (result.ok && enabled) Feedback.unlock();
+    updateSettingsStatus();
+  };
+  $('#testSound').onclick = () => {Feedback.unlock();Feedback.play('task');haptic(10);};
+  $('#reminderSwitch').onchange = async event => {
+    const input = event.target;
+    input.dataset.pending = 'true';
+    input.disabled = true;
+    try {
+      if (input.checked) await Reminders.enable($('#connectionCode')?.value);
+      else await Reminders.disable();
+      toast(input.checked ? 'Вечернее напоминание включено' : 'Напоминание выключено');
+    } catch (error) { toast(error.message); }
+    finally { delete input.dataset.pending; input.checked = state.settings.reminderEnabled; updateSettingsStatus(); }
+  };
+  $('#testReminder').onclick = async event => {
+    const button = event.currentTarget;
+    button.dataset.pending = 'true'; button.disabled = true;
+    try { await Reminders.test(); toast('Проверь уведомления телефона'); }
+    catch (error) { toast(error.message); }
+    finally { delete button.dataset.pending; updateSettingsStatus(); }
+  };
+  updateSettingsStatus();
+}
+function updateSettingsStatus() {
+  if (!$('#reminderMode')) return;
+  const status = Reminders.status();
+  const message = !status.supported ? 'Для системных уведомлений открой HTTPS-сайт в Chrome.'
+    : status.error ? status.error
+    : !status.ready ? 'Подготавливаем уведомления…'
+    : status.permission === 'denied' ? 'Уведомления запрещены в настройках сайта в Chrome.'
+    : status.enabled && status.permission !== 'granted' ? 'Выключи и снова включи напоминание, чтобы разрешить уведомления.'
+    : (status.pushActive ? 'Придёт и при закрытом Ритме. Утренних напоминаний нет.'
+    : status.configured ? (status.canReconnect ? 'Телефон подключён. Напоминание можно снова включить без кода.' : 'Подключи этот телефон кодом, чтобы получать напоминания при закрытом Ритме.')
+    : 'Работает, пока Ритм открыт. Утренних напоминаний нет.');
+  $('#reminderMode').textContent = message;
+  $('#reminderSwitch').disabled = Boolean($('#reminderSwitch').dataset.pending) || !status.ready || !status.supported;
+  $('#testSound').disabled = !state.settings.feedbackEnabled;
+  $('#testReminder').disabled = Boolean($('#testReminder').dataset.pending) || !state.settings.reminderEnabled || status.permission !== 'granted';
+  if ($('#connectionGroup')) $('#connectionGroup').hidden = status.pushActive || status.canReconnect;
 }
 function checkContent(status) {
   return status === 'done' ? icon('check') : status === 'missed' ? icon('cross') : status === 'rest' ? icon('minus') : '';
@@ -289,10 +358,11 @@ async function setStatus(date,id,status) {
   interacting = true;
   const row = rowElement(id);
   row?.classList.add('anticipating');
-  haptic(status === 'done' ? 14 : 8);
   await delay(130);
   const result = await commit(()=>{item.status = status;},{render:false,reward:false});
   if (result.ok) {
+    if (status === 'done') { Feedback.play(item.habit ? 'habit' : 'task'); haptic(10); }
+    else if (status === 'missed') { Feedback.play('missed'); haptic(5); }
     if (row) {
       row.classList.remove('anticipating','pending','done','missed','rest');
       row.classList.add(status,status === 'done' ? 'completing' : status === 'missed' ? 'flash-missed' : 'resetting');
@@ -320,12 +390,12 @@ async function deleteTask(date,id) {
   if (!item) return;
   interacting = true;
   const previous = structuredClone(item), row = rowElement(id);
-  haptic(9);
   const result = await commit(()=>{
     if (date === today) { item.removed = true; if (item.status !== 'done') item.status = 'missed'; }
     else state.days[date].items = state.days[date].items.filter(item=>item.id !== id);
   },{render:false,reward:false});
   if (result.ok) {
+    haptic(7);
     row?.classList.add('leaving-delete');
     await delay(220);
     render();
@@ -379,6 +449,9 @@ function installSwipes() {
       if (!locked || Math.abs(dx) < 76) return;
       const date = row.dataset.date, id = row.dataset.row, item = findItem(date,id);
       if (!item) return;
+      if ((dx > 0 && date === today && item.status !== 'done') || (dx < 0 && date >= today)) {
+        Feedback.play('swipe'); haptic(6);
+      }
       if (dx > 0) setStatus(date,id,'done');
       else if (!item.habit) deleteTask(date,id);
       else confirmDeleteHabit(state.habits.find(habit=>habit.id === item.habit));
@@ -502,13 +575,14 @@ function itemMenu(date,id) {
   });
 }
 function presentReward(result) {
-  if (!result.ok) return;
+  if (!result.ok || document.hidden) return;
   if (result.celebrate) {
     closeSheet(true);
     $('#rewardTitle').textContent = 'Серия — '+stats.streak+' '+plural(stats.streak);
     $('#rewardBonus').hidden = !result.iceEarned;
     $('#rewardBonus').innerHTML = emblemMarkup('🧊')+' +1 заморозка';
     $('#reward').showModal();
+    Feedback.reward();
     startConfetti();
   } else if (result.iceEarned) toast('🧊 +1 заморозка');
 }
@@ -545,7 +619,7 @@ async function importBackup(event) {
     }
     for (const habit of candidate.habits) if (typeof habit.id !== 'string' || typeof habit.title !== 'string' || !validDate(habit.start) || !Array.isArray(habit.week) || habit.week.some(day=>!Number.isInteger(day) || day < 0 || day > 6) || (habit.end && !validDate(habit.end))) throw Error('habit');
     modal('Восстановить копию?','<p>Текущие задачи, привычки и история будут заменены данными из файла.</p><button id="confirmImport" class="primary-button" type="button">Восстановить</button>');
-    $('#confirmImport').onclick = async()=>{ closeSheet(); const result=await commit(()=>{state=candidate;E.ensure(state,today);},{reward:false});if(result.ok)toast('Копия восстановлена'); };
+    $('#confirmImport').onclick = async()=>{ closeSheet(); const result=await commit(()=>{state=candidate;normalizeSettings();E.ensure(state,today);},{reward:false});if(result.ok)toast('Копия восстановлена'); };
   } catch (error) { toast('Не удалось прочитать резервную копию'); }
 }
 async function rollover() {
@@ -556,7 +630,14 @@ async function rollover() {
     await commit(()=>E.ensure(state,today),{reward:false});
   }
 }
+function openHabitNotification() {
+  closeSheet(true);
+  if ($('#reward').open) $('#reward').close();
+  switchTab('Привычки');
+}
 $('#backup').innerHTML = icon('download')+'<span>Копия</span>';
+$('#settings').innerHTML = icon('settings');
+$('#settings').onclick = () => { if (state && !busy && !interacting) settingsForm(); };
 $('#backup').onclick = () => {
   if (!state) return;
   const url = URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));
@@ -584,11 +665,21 @@ document.addEventListener('pointerdown',event=>{
   try {
     db=await new Promise((resolve,reject)=>{const request=indexedDB.open('ritm-planner',1);request.onupgradeneeded=()=>request.result.createObjectStore('data');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
     state=await new Promise((resolve,reject)=>{const request=db.transaction('data').objectStore('data').get('state');request.onsuccess=()=>resolve(request.result || E.fresh(today));request.onerror=()=>reject(request.error);});
+    normalizeSettings();
+    Feedback.init(() => state.settings);
     E.ensure(state,today);stats=E.calculate(state,today);await save();render();
+    if (location.hash === '#habits') openHabitNotification();
+    window.addEventListener('hashchange',()=>{if(location.hash === '#habits') openHabitNotification();});
     setInterval(rollover,15000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)rollover();});
     window.addEventListener('focus',rollover);
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(()=>{});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(() => {
+      Reminders.init({db, getState:() => state,
+        persistSettings:patch => commit(()=>Object.assign(state.settings,patch),{reward:false}),
+        announce:message => toast(message), changed:updateSettingsStatus,
+        openHabits:openHabitNotification
+      }).catch(Reminders.failed);
+    }).catch(()=>{Reminders.failed();updateSettingsStatus();});
   } catch (error) {
     $('#app').innerHTML=pageHead('Не удалось открыть хранилище','Открой сайт в обычной вкладке Chrome и разреши сохранение данных.');
   }

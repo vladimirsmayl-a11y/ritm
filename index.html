@@ -14,7 +14,10 @@
   <main>
     <header class="app-header">
       <a class="brand" href="#today" aria-label="Ритм — сегодня">ритм<span class="brand-dot"></span></a>
-      <button id="backup" class="backup-button" aria-label="Скачать резервную копию"></button>
+      <div class="header-actions">
+        <button id="backup" class="backup-button" aria-label="Скачать резервную копию"></button>
+        <button id="settings" class="settings-button" aria-label="Настройки"></button>
+      </div>
     </header>
     <div id="app" aria-live="off"></div>
   </main>
@@ -36,6 +39,9 @@
   </dialog>
   <div id="toast" role="status" hidden></div>
   <script src="engine.js"></script>
+  <script src="feedback.js"></script>
+  <script src="reminder-config.js"></script>
+  <script src="reminders.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
