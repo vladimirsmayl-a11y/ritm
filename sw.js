@@ -1,7 +1,7 @@
 'use strict';
 const SCOPE = self.registration.scope;
 const PREFIX = 'ritm:' + new URL(SCOPE).pathname + ':';
-const CACHE = PREFIX + 'neon-v5';
+const CACHE = PREFIX + 'neon-v6';
 const FILES = ['./','index.html','style.css','engine.js','app.js','feedback.js','reminders.js','reminder-config.js','manifest.json','icon.svg','fire.svg','ice.svg','emoji-reading.svg','emoji-run.svg','emoji-workout.svg','emoji-goal.svg','emoji-work.svg','emoji-sun.svg','icon-192.png','icon-512.png','notification-badge.png','manrope-cyrillic-wght-normal.woff2','manrope-latin-wght-normal.woff2','sound-task.wav','sound-habit.wav','sound-missed.wav','sound-streak.wav','sound-complete.wav','sound-swipe.wav'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES.map(file => new URL(file,SCOPE).href))).then(() => self.skipWaiting()));
@@ -29,7 +29,7 @@ async function showEveningPush(payload) {
     });
     if (!state?.settings?.reminderEnabled) return;
     const items = state.days[date]?.items;
-    const pending = items ? items.filter(item => item.habit && item.status === 'pending').length
+    const pending = items ? items.filter(item => item.habit && !item.removed && item.status === 'pending').length
       : state.habits.filter(habit => habit.start <= date && (!habit.end || habit.end > date) && habit.week.includes(now.getDay())).length;
     if (!pending) return;
     const acquired = await new Promise((resolve,reject) => {

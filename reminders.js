@@ -59,7 +59,7 @@ window.RitmReminders = (() => {
     const day = state.days[date];
     return {
       timeZone:timeZone(), day:date,
-      pending:(day?.items || []).filter(item => item.habit && item.status === 'pending').length,
+      pending:(day?.items || []).filter(item => item.habit && !item.removed && item.status === 'pending').length,
       schedules:state.habits.filter(habit => !habit.end || habit.end > date).map(habit => ({
         start:habit.start, end:habit.end || null, week:habit.week
       }))

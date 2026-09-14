@@ -204,7 +204,7 @@ function todayView() {
   const active = tasks.filter(item => item.status !== 'done' && !item.removed);
   const complete = tasks.filter(item => item.status === 'done' && !item.removed);
   const removed = tasks.filter(item => item.removed);
-  const habits = day.items.filter(item => item.habit);
+  const habits = day.items.filter(item => item.habit && !item.removed);
   const habitLeft = habits.filter(item => !['done','rest'].includes(item.status)).length;
   let html = pageHead(dateLabel(date),new Date(date+'T12:00:00').toLocaleDateString('ru',{weekday:'long'}),plan === 'today' ? 'Сегодня' : 'Завтра');
   html += `<div class="stats"><div class="card stat-card"><span class="stat-symbol" aria-hidden="true"><img src="fire.svg" alt=""></span><div class="stat-copy"><div class="stat-value" id="streakValue">${stats.streak}</div><div class="label">серия дней</div></div></div><div class="card stat-card stat-ice"><span class="stat-symbol" aria-hidden="true"><img src="ice.svg" alt=""></span><div class="stat-copy"><div class="stat-value"><span id="iceValue">${stats.ice}</span><small>/2</small></div><div class="label">заморозки</div></div></div></div>`;
@@ -228,7 +228,7 @@ function habitStreak(habit) {
   return series;
 }
 function habitsView() {
-  const habits = state.habits.filter(habit => !habit.end || habit.end > today);
+  const habits = state.habits.filter(habit => (!habit.end || habit.end > today) && !state.days[today]?.items.some(item => item.habit === habit.id && item.removed));
   let html = pageHead('Привычки','Твой ритм, день за днём');
   html += `<div class="section"><span class="label">${habits.length ? 'Привычек: '+habits.length : 'Начни с одного действия'}</span><button id="addHabit">${icon('plus')} Добавить</button></div>`;
   for (const habit of habits) {
@@ -518,25 +518,32 @@ function habitForm(habit) {
 }
 function confirmDeleteHabit(habit) {
   if (!habit || busy || interacting) return;
-  modal('Удалить привычку?',`<p>${esc(habit.title)} исчезнет из будущего плана. Сегодняшняя отметка и история сохранятся.</p><button id="confirmDelete" class="danger restore-button" type="button">${icon('trash')} Удалить</button><button id="keepHabit" class="primary-button" type="button">Оставить</button>`);
+  modal('Удалить привычку?',`<p>${esc(habit.title)} сразу исчезнет из списка привычек. Сегодняшняя отметка останется в истории и учёте серии.</p><button id="confirmDelete" class="danger restore-button" type="button">${icon('trash')} Удалить</button><button id="keepHabit" class="primary-button" type="button">Оставить</button>`);
   $('#keepHabit').onclick = () => closeSheet();
   $('#confirmDelete').onclick = async()=>{
     const end = habit.end, future = Object.fromEntries(Object.entries(state.days).filter(([date])=>date > today).map(([date,day])=>[date,structuredClone(day.items.filter(item=>item.habit === habit.id))]));
     closeSheet();
-    await commit(()=>{
-      habit.end = E.next(today);
+    const result = await commit(()=>{
+      habit.end = today;
       for (const [date,day] of Object.entries(state.days)) {
         if (date > today) day.items = day.items.filter(item=>item.habit !== habit.id);
         if (date === today) day.items.filter(item=>item.habit === habit.id).forEach(item=>item.removed = true);
       }
     });
-    toast('Привычка удалена с завтра',async()=>{
+    if (!result.ok) return;
+    toast('Привычка удалена',async()=>{
       await commit(()=>{
         const current = state.habits.find(current=>current.id === habit.id);
         if (!current) return;
         current.end = end;
         state.days[today].items.filter(item=>item.habit === habit.id).forEach(item=>item.removed = false);
-        for (const [date,items] of Object.entries(future)) for (const item of items) if (!findItem(date,item.id)) E.ensure(state,date).items.push(item);
+        for (const [date,items] of Object.entries(future)) {
+          const day = E.ensure(state,date);
+          for (const item of items) {
+            const index = day.items.findIndex(current=>current.id === item.id);
+            if (index < 0) day.items.push(item); else day.items[index] = item;
+          }
+        }
       });
     });
   };
